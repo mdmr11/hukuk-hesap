@@ -67,6 +67,7 @@
       <option value="alacak">💰 Alacak faizi</option>
       <option value="vekalet">👔 Vekalet + harç + gider</option>
       <option value="harc">🏛 Harç</option>
+      <option value="posta">✉️ Tebligat / posta ücreti</option>
       <option value="kira">📈 Kira artışı</option>
       <option value="kiraseyri">🗓 Kira seyri</option>
     </select>
@@ -98,6 +99,27 @@
   <div class="alan" data-a="tur_kira">
     <label for="tur_kira">Kira türü</label>
     <select id="tur_kira"><option value="konut">Konut</option><option value="isyeri">Çatılı işyeri</option></select>
+  </div>
+
+  <div class="alan" data-a="tur_posta">
+    <label for="tur_posta">Gönderi türü</label>
+    <select id="tur_posta">
+      <option value="normal">Tebligat</option><option value="hizli">Hızlı tebligat</option>
+      <option value="mts">MTS tebligat</option><option value="taahhutlu">Taahhütlü mektup</option>
+      <option value="iadeli">İadeli taahhütlü (kart)</option>
+      <option value="eposta">İadeli taahhütlü (e-posta)</option>
+    </select>
+  </div>
+
+  <div class="alan" data-a="adet">
+    <label for="adet">Adet</label>
+    <input id="adet" type="text" inputmode="numeric" value="1" maxlength="4" autocomplete="off">
+  </div>
+
+  <div class="alan" data-a="agirlik">
+    <label for="agirlik">Ağırlık (gram)</label>
+    <input id="agirlik" type="text" inputmode="decimal" placeholder="Boş = ilk dilim" autocomplete="off">
+    <div class="not">Boş bırakılırsa ilk dilim varsayılır: tebligatta 100 grama, mektupta 20 grama kadar.</div>
   </div>
 
   <div class="alan" data-a="faiz">
@@ -154,6 +176,12 @@
     <div class="not">Gider avansı hesabı için; çoğu davada 2.</div>
   </div>
 
+  <div class="alan" data-a="borclu">
+    <label for="borclu">Borçlu sayısı</label>
+    <input id="borclu" type="text" inputmode="numeric" value="1" maxlength="3" autocomplete="off">
+    <div class="not">Yalnız ödeme emri tebligat masrafı bilgi satırı için; toplamlara girmez.</div>
+  </div>
+
   <div class="alan" data-a="bas">
     <label for="bas" id="bas_etiket">Başlangıç tarihi</label>
     <div class="tarih-kutu">
@@ -184,7 +212,7 @@
 <script>
 (function () {
   "use strict";
-  var SURUM = "2026-11-16.1";
+  var SURUM = "2026-11-22.1";
   var tg = window.Telegram && window.Telegram.WebApp;
   // Klavye düğmesinden açılan Mini App'te initData BOŞ gelir (15.11 canlı hata) ⇒
   // Telegram içinde olmayı birden çok işaretten anla:
@@ -259,14 +287,16 @@
     var tv = $("tur_vek").value, th = $("tur_harc").value;
     var liste = {
       dosya: ["dosya", "faiz", f === "sozlesme" && "oran", $("dosya").value === "dava" && "mahkeme",
-              "tutar", f !== "faizsiz" && "bas", "tarih", $("dosya").value === "dava" && "taraf"],
+              "tutar", f !== "faizsiz" && "bas", "tarih", $("dosya").value === "dava" && "taraf",
+              $("dosya").value === "icra" && "borclu"],
       alacak: ["faiz", f === "sozlesme" && "oran", "tutar", "bas", "tarih"],
       kira: ["tutar", "ay"],
       kiraseyri: ["tur_kira", "tutar", "bas", "tarih"],
       vekalet: ["tur_vek", tv === "dava" && "mahkeme", tv === "icramahkemesi" && "icramah",
-                tv === "icra" && "ilam", "tutar", tv !== "icra" && "taraf"],
+                tv === "icra" && "ilam", "tutar", tv !== "icra" && "taraf", tv === "icra" && "borclu"],
       harc: ["tur_harc", th === "dava" && "mahkeme_harc", th === "icra" && "ilam",
-             th !== "icramahkemesi" && "tutar"]
+             th !== "icramahkemesi" && "tutar"],
+      posta: ["tur_posta", "adet", "agirlik", "tarih"]
     }[h];
     return ["hesap"].concat(liste.filter(Boolean));
   }
@@ -290,10 +320,11 @@
       var e = el.querySelector(".hata-yazi"); if (e) e.remove();
     });
     var anahtar = h === "vekalet" ? $("tur_vek").value : h === "harc" ? $("tur_harc").value : h;
-    $("tutar_etiket").textContent = TUTAR_ETIKET[anahtar];
+    $("tutar_etiket").textContent = TUTAR_ETIKET[anahtar] || "Tutar (TL)";
     $("bas_etiket").textContent = h === "kiraseyri" ? "Kira başlangıç tarihi" : "Faiz başlangıç (temerrüt) tarihi";
     $("tarih_etiket").textContent = h === "alacak" ? "Faiz bitiş tarihi"
       : h === "kiraseyri" ? "Hangi tarihe kadar"
+      : h === "posta" ? "Gönderi tarihi"
       : ($("dosya").value === "icra" ? "Takip tarihi" : "Dava tarihi");
   }
 
@@ -305,6 +336,7 @@
   }
 
   var SAYI = /^%?\s*\d{1,3}(\.\d{3})*(,\d+)?\s*%?$|^%?\s*\d+([.,]\d+)?\s*%?$/;
+  var GRAM = /^\d{1,3}(\.\d{3})*(,\d+)?$|^\d+([.,]\d+)?$/;
   // Yazılan sayının değeri — botun okuyuşuyla aynı: "100.000" = 100000, "3,5" = 3.5, "0.5" = 0.5
   function sayiDegeri(s) {
     s = s.replace(/[%\s]/g, "");
@@ -315,7 +347,7 @@
   function topla() {
     guncelle();
     var g = gerekli(), v = { v: 1, hesap: $("hesap").value }, tamam = true;
-    var ad = { tur_vek: "tur", tur_harc: "tur", tur_kira: "tur", mahkeme_harc: "mahkeme" };
+    var ad = { tur_vek: "tur", tur_harc: "tur", tur_kira: "tur", tur_posta: "tur", mahkeme_harc: "mahkeme" };
     g.forEach(function (a) {
       if (a === "hesap") return;
       var deger = ($(a).value || "").trim();
@@ -337,6 +369,16 @@
       }
       if (a === "taraf" && !(/^\d{1,3}$/.test(deger) && +deger >= 2 && +deger <= 100)) {
         hataGoster(a, "2 ile 100 arasında bir sayı yazın."); tamam = false; return;
+      }
+      if (a === "borclu" && !(/^\d{1,3}$/.test(deger) && +deger >= 1 && +deger <= 100)) {
+        hataGoster(a, "1 ile 100 arasında bir sayı yazın."); tamam = false; return;
+      }
+      if (a === "adet" && !(/^\d{1,4}$/.test(deger) && +deger >= 1 && +deger <= 1000)) {
+        hataGoster(a, "1 ile 1000 arasında bir sayı yazın."); tamam = false; return;
+      }
+      // ağırlık: yalnız sayı (gram); birim ve yüzde işareti yazılmaz. Boşsa ilk dilim varsayılır.
+      if (a === "agirlik" && deger && !(GRAM.test(deger) && sayiDegeri(deger) > 0)) {
+        hataGoster(a, "Gram olarak sıfırdan büyük bir sayı yazın (ör. 250)."); tamam = false; return;
       }
       v[ad[a] || a] = deger;
     });
