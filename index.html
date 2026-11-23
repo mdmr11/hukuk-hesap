@@ -84,6 +84,7 @@
       <option value="dava">Dava</option><option value="tahliye">Tahliye davası</option>
       <option value="tespit">Kira tespit davası</option><option value="icra">İcra takibi</option>
       <option value="icramahkemesi">İcra mahkemesi</option>
+      <option value="ihalefeshi">İhalenin feshi</option>
     </select>
   </div>
 
@@ -93,6 +94,7 @@
       <option value="dava">Dava</option><option value="icra">İcra takibi</option>
       <option value="icramahkemesi">İcra mahkemesi</option>
       <option value="tahliye">Tahliye davası</option><option value="tespit">Kira tespit davası</option>
+      <option value="ihalefeshi">İhalenin feshi</option>
     </select>
   </div>
 
@@ -152,12 +154,29 @@
     </select>
   </div>
 
+  <div class="alan" data-a="konu">
+    <label for="konu">Dava konusu</label>
+    <select id="konu">
+      <option value="genel">Genel</option><option value="bedensel">Ölüm veya bedensel zarar tazminatı</option>
+    </select>
+    <div class="not">Ölüm ve bedensel zarar tazminatı davalarında peşin harç daha düşük orandan alınır (492 sayılı Kanun md. 28/a).</div>
+  </div>
+
   <div class="alan" data-a="icramah">
     <label for="icramah">İcra mahkemesindeki iş</label>
     <select id="icramah">
       <option value="durusmasiz">Duruşmasız (itirazın kaldırılması, şikâyet…)</option>
       <option value="durusmali">Dava / duruşmalı iş</option><option value="istihkak">İstihkak davası</option>
     </select>
+  </div>
+
+  <div class="alan" data-a="talep">
+    <label for="talep">İhalenin feshini isteyen</label>
+    <select id="talep">
+      <option value="katilimci">İhaleye katılan (pey süren)</option>
+      <option value="ilgili">Alacaklı, borçlu ya da sicildeki ilgili</option>
+    </select>
+    <div class="not">İhaleye katılanın talebinde ihale bedeli üzerinden nispi harç ve teminat alınır; satış isteyen alacaklı, borçlu, sicildeki ilgili ve sınırlı ayni hak sahibinden alınmaz (İİK md. 134).</div>
   </div>
 
   <div class="alan" data-a="ilam">
@@ -212,7 +231,7 @@
 <script>
 (function () {
   "use strict";
-  var SURUM = "2026-11-22.1";
+  var SURUM = "2026-11-23.2";
   var tg = window.Telegram && window.Telegram.WebApp;
   // Klavye düğmesinden açılan Mini App'te initData BOŞ gelir (15.11 canlı hata) ⇒
   // Telegram içinde olmayı birden çok işaretten anla:
@@ -278,7 +297,7 @@
     kira: "Mevcut aylık kira (TL)", kiraseyri: "İlk aylık kira (TL)",
     dava: "Dava değeri (TL)", tahliye: "Aylık kira bedeli (TL)",
     tespit: "Aylık kira FARKI (yeni − eski, TL)", icra: "Takip tutarı (TL)",
-    icramahkemesi: "İşin değeri (TL)"
+    icramahkemesi: "İşin değeri (TL)", ihalefeshi: "İhale bedeli (TL)"
   };
 
   // Hangi hesapta hangi alanlar görünür — bot tarafındaki form.py ile aynı kurallar
@@ -287,14 +306,17 @@
     var tv = $("tur_vek").value, th = $("tur_harc").value;
     var liste = {
       dosya: ["dosya", "faiz", f === "sozlesme" && "oran", $("dosya").value === "dava" && "mahkeme",
+              $("dosya").value === "dava" && "konu",
               "tutar", f !== "faizsiz" && "bas", "tarih", $("dosya").value === "dava" && "taraf",
               $("dosya").value === "icra" && "borclu"],
       alacak: ["faiz", f === "sozlesme" && "oran", "tutar", "bas", "tarih"],
       kira: ["tutar", "ay"],
       kiraseyri: ["tur_kira", "tutar", "bas", "tarih"],
-      vekalet: ["tur_vek", tv === "dava" && "mahkeme", tv === "icramahkemesi" && "icramah",
+      vekalet: ["tur_vek", tv === "dava" && "mahkeme", tv === "dava" && "konu", tv === "icramahkemesi" && "icramah",
+                tv === "ihalefeshi" && "talep",
                 tv === "icra" && "ilam", "tutar", tv !== "icra" && "taraf", tv === "icra" && "borclu"],
-      harc: ["tur_harc", th === "dava" && "mahkeme_harc", th === "icra" && "ilam",
+      harc: ["tur_harc", th === "dava" && "mahkeme_harc", th === "dava" && "konu", th === "ihalefeshi" && "talep",
+             th === "icra" && "ilam",
              th !== "icramahkemesi" && "tutar"],
       posta: ["tur_posta", "adet", "agirlik", "tarih"]
     }[h];
