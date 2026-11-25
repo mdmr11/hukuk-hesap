@@ -51,6 +51,12 @@
             font-size: 20px; }
   .takvim input[type=date] { position: absolute; inset: 0; width: 100%; height: 100%;
                              min-height: 0; padding: 0; opacity: 0; }
+  .odeme-satir { display: flex; gap: 6px; margin: 0 0 8px; }
+  .odeme-satir input[type=text] { flex: 1 1 0; min-width: 0; padding: 12px 8px; }
+  .odeme-sil, #odeme_ekle { border: 0; border-radius: 10px; font: inherit; color: var(--fg);
+                            background: var(--alan); min-height: 46px; }
+  .odeme-sil { flex: 0 0 40px; }
+  #odeme_ekle { width: 100%; padding: 12px; }
   #onizleme { white-space: pre-wrap; word-break: break-all; font-size: 12px;
               background: var(--alan); padding: 12px; border-radius: 10px; margin-top: 16px; }
   #onizleme:empty { display: none; }
@@ -64,6 +70,7 @@
     <label for="hesap">Hesap türü</label>
     <select id="hesap">
       <option value="dosya">📁 Dosya hesabı (alacak + faiz + vekalet + harç)</option>
+      <option value="kapak">🧾 Kapak hesabı (icra dosyasında kalan borç)</option>
       <option value="alacak">💰 Alacak faizi</option>
       <option value="vekalet">👔 Vekalet + harç + gider</option>
       <option value="harc">🏛 Harç</option>
@@ -189,6 +196,18 @@
     <input id="tutar" type="text" inputmode="decimal" placeholder="ör. 100.000" autocomplete="off">
   </div>
 
+  <div class="alan" data-a="islemis">
+    <label for="islemis">Takip öncesi işlemiş faiz (TL)</label>
+    <input id="islemis" type="text" inputmode="decimal" placeholder="Boş = yok" autocomplete="off">
+    <div class="not">Takip talebinde yazan işlemiş faiz tutarı; bot bu tutarı kendisi hesaplamaz.</div>
+  </div>
+
+  <div class="alan" data-a="masraf">
+    <label for="masraf">Takip masrafları toplamı (TL)</label>
+    <input id="masraf" type="text" inputmode="decimal" placeholder="Boş = yok" autocomplete="off">
+    <div class="not">Alacaklının ödediği başvurma harcı, peşin harç, suret harcı, tebligat ve haciz masrafları.</div>
+  </div>
+
   <div class="alan" data-a="taraf">
     <label for="taraf">Taraf sayısı (davacı + davalı)</label>
     <input id="taraf" type="text" inputmode="numeric" value="2" maxlength="3" autocomplete="off">
@@ -218,6 +237,22 @@
     <div class="not">Boş bırakılırsa hesaplamanın yapıldığı gün kullanılır.</div>
   </div>
 
+  <div class="alan" data-a="haciz">
+    <label for="haciz">Haciz tarihi</label>
+    <div class="tarih-kutu">
+      <input id="haciz" type="text" inputmode="numeric" placeholder="Boş = haciz yok" maxlength="10" autocomplete="off">
+      <span class="takvim" aria-hidden="true">📅<input type="date" class="takvim-sec" data-hedef="haciz" tabindex="-1"></span>
+    </div>
+    <div class="not">Haciz günü ve sonrasında yapılan ödemelerde tahsil harcı oranı değişir.</div>
+  </div>
+
+  <div class="alan" data-a="odemeler">
+    <label>Ödemeler</label>
+    <div id="odeme_liste"></div>
+    <button type="button" id="odeme_ekle">＋ Ödeme ekle</button>
+    <div class="not">Her ödeme için tarih ve tutar yazın. Ödeme yoksa boş bırakın.</div>
+  </div>
+
   <div class="alan" data-a="ay">
     <label for="ay">Yenileme ayı</label>
     <input id="ay" type="month" placeholder="YYYY-AA (ör. 2026-11)">
@@ -231,7 +266,7 @@
 <script>
 (function () {
   "use strict";
-  var SURUM = "2026-11-23.2";
+  var SURUM = "2026-11-25.1";
   var tg = window.Telegram && window.Telegram.WebApp;
   // Klavye düğmesinden açılan Mini App'te initData BOŞ gelir (15.11 canlı hata) ⇒
   // Telegram içinde olmayı birden çok işaretten anla:
@@ -276,7 +311,7 @@
   }
   var iki = function (n) { return (n < 10 ? "0" : "") + n; };
   var ggaayyyy = function (d) { return iki(d.getDate()) + "." + iki(d.getMonth() + 1) + "." + d.getFullYear(); };
-  ["bas", "tarih"].forEach(function (id) {
+  ["bas", "tarih", "haciz"].forEach(function (id) {
     $(id).addEventListener("input", function () { tarihBicimle($(id)); });
   });
   document.querySelectorAll(".takvim-sec").forEach(function (sec) {
@@ -292,8 +327,31 @@
   });
   $("tarih").placeholder = "Boş = hesaplama günü (" + ggaayyyy(new Date()) + ")";
 
+  // --- kapak hesabı: ödeme satırları (tarih + tutar). Satır sayısı botun sınırıyla aynıdır. ---
+  var AZAMI_ODEME = 60;
+  function odemeDurumu() { $("odeme_ekle").hidden = $("odeme_liste").children.length >= AZAMI_ODEME; }
+  function odemeEkle() {
+    var liste = $("odeme_liste");
+    if (liste.children.length >= AZAMI_ODEME) return;
+    var satir = document.createElement("div"), t = document.createElement("input"),
+        x = document.createElement("input"), sil = document.createElement("button");
+    satir.className = "odeme-satir";
+    t.type = "text"; t.className = "odeme-tarih"; t.placeholder = "GG.AA.YYYY"; t.maxLength = 10;
+    t.setAttribute("inputmode", "numeric"); t.setAttribute("autocomplete", "off");
+    t.addEventListener("input", function () { tarihBicimle(t); });
+    x.type = "text"; x.className = "odeme-tutar"; x.placeholder = "Tutar (TL)";
+    x.setAttribute("inputmode", "decimal"); x.setAttribute("autocomplete", "off");
+    sil.type = "button"; sil.className = "odeme-sil"; sil.textContent = "✕";
+    sil.setAttribute("aria-label", "Bu ödemeyi sil");
+    sil.addEventListener("click", function () { liste.removeChild(satir); odemeDurumu(); });
+    satir.appendChild(t); satir.appendChild(x); satir.appendChild(sil);
+    liste.appendChild(satir);
+    odemeDurumu();
+  }
+  $("odeme_ekle").addEventListener("click", odemeEkle);
+
   var TUTAR_ETIKET = {
-    dosya: "Asıl alacak tutarı (TL)", alacak: "Alacak tutarı (TL)",
+    dosya: "Asıl alacak tutarı (TL)", alacak: "Alacak tutarı (TL)", kapak: "Asıl alacak (TL)",
     kira: "Mevcut aylık kira (TL)", kiraseyri: "İlk aylık kira (TL)",
     dava: "Dava değeri (TL)", tahliye: "Aylık kira bedeli (TL)",
     tespit: "Aylık kira FARKI (yeni − eski, TL)", icra: "Takip tutarı (TL)",
@@ -309,6 +367,7 @@
               $("dosya").value === "dava" && "konu",
               "tutar", f !== "faizsiz" && "bas", "tarih", $("dosya").value === "dava" && "taraf",
               $("dosya").value === "icra" && "borclu"],
+      kapak: ["faiz", f === "sozlesme" && "oran", "tutar", "islemis", "masraf", "bas", "tarih", "haciz", "odemeler"],
       alacak: ["faiz", f === "sozlesme" && "oran", "tutar", "bas", "tarih"],
       kira: ["tutar", "ay"],
       kiraseyri: ["tur_kira", "tutar", "bas", "tarih"],
@@ -323,15 +382,15 @@
     return ["hesap"].concat(liste.filter(Boolean));
   }
 
-  // "Faizsiz" yalnız dosya hesabında anlamlıdır. Seçenek, gizlenmek yerine listeden ÇIKARILIR:
+  // "Faizsiz" yalnız dosya ve kapak hesabında anlamlıdır. Seçenek, gizlenmek yerine listeden ÇIKARILIR:
   // iPhone'un seçim tekerleği `hidden` işaretli <option>'ı yine de gösterebiliyor.
   var FAIZSIZ = $("faiz").querySelector('option[value="faizsiz"]');
 
   function guncelle() {
     var h = $("hesap").value, g;
-    var listede = FAIZSIZ.parentNode === $("faiz");
-    if (h === "dosya" && !listede) $("faiz").appendChild(FAIZSIZ);
-    if (h !== "dosya" && listede) {
+    var listede = FAIZSIZ.parentNode === $("faiz"), faizsizOlur = h === "dosya" || h === "kapak";
+    if (faizsizOlur && !listede) $("faiz").appendChild(FAIZSIZ);
+    if (!faizsizOlur && listede) {
       if ($("faiz").value === "faizsiz") $("faiz").value = "yasal";
       $("faiz").removeChild(FAIZSIZ);
     }
@@ -343,10 +402,12 @@
     });
     var anahtar = h === "vekalet" ? $("tur_vek").value : h === "harc" ? $("tur_harc").value : h;
     $("tutar_etiket").textContent = TUTAR_ETIKET[anahtar] || "Tutar (TL)";
-    $("bas_etiket").textContent = h === "kiraseyri" ? "Kira başlangıç tarihi" : "Faiz başlangıç (temerrüt) tarihi";
+    $("bas_etiket").textContent = h === "kiraseyri" ? "Kira başlangıç tarihi"
+      : h === "kapak" ? "Takip tarihi" : "Faiz başlangıç (temerrüt) tarihi";
     $("tarih_etiket").textContent = h === "alacak" ? "Faiz bitiş tarihi"
       : h === "kiraseyri" ? "Hangi tarihe kadar"
       : h === "posta" ? "Gönderi tarihi"
+      : h === "kapak" ? "Hesap tarihi (borcun hesaplanacağı gün)"
       : ($("dosya").value === "icra" ? "Takip tarihi" : "Dava tarihi");
   }
 
@@ -372,7 +433,34 @@
     var ad = { tur_vek: "tur", tur_harc: "tur", tur_kira: "tur", tur_posta: "tur", mahkeme_harc: "mahkeme" };
     g.forEach(function (a) {
       if (a === "hesap") return;
+      if (a === "odemeler") {                          // kapak hesabı: satırlar "tarih tutar", ';' ile birleşir
+        var satirlar = $("odeme_liste").children, parcalar = [], sorun = "";
+        for (var i = 0; i < satirlar.length && !sorun; i++) {
+          var ts = satirlar[i].querySelector(".odeme-tarih").value.trim(),
+              xs = satirlar[i].querySelector(".odeme-tutar").value.trim();
+          if (!ts && !xs) continue;                    // ikisi de boş bırakılan satır yok sayılır
+          var od = tarihOku(ts);
+          if (!od) sorun = (i + 1) + ". ödemenin tarihini GG.AA.YYYY biçiminde yazın.";
+          else if (!GRAM.test(xs) || !(sayiDegeri(xs) > 0)) sorun = (i + 1) + ". ödemenin tutarını sıfırdan büyük bir sayı olarak yazın.";
+          else if (sayiDegeri(xs) > 1e15) sorun = (i + 1) + ". ödemenin tutarı çok büyük.";
+          else parcalar.push(ggaayyyy(od) + " " + xs);
+        }
+        if (sorun) { hataGoster(a, sorun); tamam = false; return; }
+        if (parcalar.length) v.odemeler = parcalar.join(";");
+        return;
+      }
       var deger = ($(a).value || "").trim();
+      if (a === "islemis" || a === "masraf") {         // isteğe bağlı tutar: boşsa alan gönderilmez
+        if (!deger) return;
+        if (!GRAM.test(deger)) { hataGoster(a, "Sayı olarak yazın (ör. 2.500)."); tamam = false; return; }
+        if (sayiDegeri(deger) > 1e15) { hataGoster(a, "Sayı çok büyük."); tamam = false; return; }
+      }
+      if (a === "haciz") {                             // isteğe bağlı tarih: boşsa alan gönderilmez
+        if (!deger) return;
+        var hz = tarihOku(deger);
+        if (!hz) { hataGoster(a, "Tarihi GG.AA.YYYY biçiminde yazın (ör. 01.03.2026)."); tamam = false; return; }
+        deger = ggaayyyy(hz);
+      }
       if ((a === "tutar" || a === "oran") && !SAYI.test(deger)) {
         hataGoster(a, deger ? "Sayı olarak yazın (ör. 100.000)." : "Bu alan boş bırakılamaz.");
         tamam = false; return;
@@ -407,13 +495,32 @@
     if (tamam && v.bas) {
       var bugun = new Date(); bugun.setHours(0, 0, 0, 0);
       var b = tarihOku(v.bas), t = v.tarih ? tarihOku(v.tarih) : bugun;
-      var kira = v.hesap === "kiraseyri";            // kira seyrinde başlangıç = hesap günü olabilir
+      var kapak = v.hesap === "kapak";
+      var kira = v.hesap === "kiraseyri" || kapak;   // kira seyrinde ve kapak hesabında başlangıç = hesap günü olabilir
       if (kira ? t < b : t <= b) {
-        if (v.tarih) hataGoster("tarih", kira ? "Bu tarih başlangıç tarihinden önce olamaz."
+        if (v.tarih) hataGoster("tarih", kapak ? "Hesap tarihi takip tarihinden önce olamaz."
+                                       : kira ? "Bu tarih başlangıç tarihinden önce olamaz."
                                               : "Bu tarih başlangıç tarihinden sonra olmalı.");
-        else hataGoster("bas", kira ? "Başlangıç tarihi bugünden sonra olamaz (ya da hesap tarihini yazın)."
+        else hataGoster("bas", kapak ? "Takip tarihi bugünden sonra olamaz (ya da hesap tarihini yazın)."
+                             : kira ? "Başlangıç tarihi bugünden sonra olamaz (ya da hesap tarihini yazın)."
                                     : "Başlangıç tarihi bugünden önce olmalı (ya da bitiş tarihini yazın).");
         tamam = false;
+      }
+      // kapak hesabı: haciz ve ödeme tarihleri takip tarihi ile hesap tarihi arasında olmalı (botun kuralı)
+      if (tamam && kapak && v.haciz && (tarihOku(v.haciz) < b || tarihOku(v.haciz) > t)) {
+        hataGoster("haciz", "Haciz tarihi takip tarihi ile hesap tarihi arasında olmalı."); tamam = false;
+      }
+      if (tamam && kapak && v.odemeler) {
+        v.odemeler.split(";").some(function (p, i) {
+          var od = tarihOku(p.split(" ")[0]);
+          if (od >= b && od <= t) return false;
+          hataGoster("odemeler", (i + 1) + ". ödemenin tarihi takip tarihi ile hesap tarihi arasında olmalı.");
+          tamam = false;
+          return true;
+        });
+      }
+      if (tamam && kapak && JSON.stringify(v).length > 2000) {      // bot 2000 karakterden uzun veriyi kabul etmez
+        hataGoster("odemeler", "Form verisi çok uzun; ödeme sayısını azaltın."); tamam = false;
       }
     }
     return tamam ? v : null;
