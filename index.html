@@ -135,7 +135,10 @@
     <label for="faiz">Faiz türü</label>
     <select id="faiz">
       <option value="yasal">Yasal</option><option value="ticari">Ticari (yarıyıl)</option>
-      <option value="avans">Avans (TCMB tarihleri)</option><option value="sozlesme">Sözleşme oranı</option>
+      <option value="avans">Avans (TCMB tarihleri)</option>
+      <option value="sozlesme">Sözleşme oranı</option>
+      <option value="mevduat">Mevduat en yüksek (aylık)</option>
+      <option value="mevduatyil">Mevduat en yüksek (yıllık dönem)</option>
       <option value="faizsiz">Faizsiz</option>
     </select>
   </div>
@@ -266,7 +269,7 @@
 <script>
 (function () {
   "use strict";
-  var SURUM = "2026-11-25.1";
+  var SURUM = "2026-11-26.1";
   var tg = window.Telegram && window.Telegram.WebApp;
   // Klavye düğmesinden açılan Mini App'te initData BOŞ gelir (15.11 canlı hata) ⇒
   // Telegram içinde olmayı birden çok işaretten anla:
